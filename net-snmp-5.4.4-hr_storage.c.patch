@@ -1,0 +1,50 @@
+--- hr_storage.c.org	2010-11-08 06:15:32.000000000 +0900
++++ hr_storage.c	2015-02-07 00:43:57.134994243 +0900
+@@ -188,7 +188,11 @@
+ 
+ extern struct mnttab *HRFS_entry;
+ #define HRFS_mount	mnt_mountp
++#ifdef _LARGEFILE64_SOURCE
++#define HRFS_statfs	statvfs64
++#else
+ #define HRFS_statfs	statvfs
++#endif
+ #define HRFS_HAS_FRSIZE STRUCT_STATVFS_HAS_F_FRSIZE
+ 
+ #elif defined(WIN32)
+@@ -497,6 +501,27 @@
+ };
+ 
+ 
++/*
++ * re-calculate values like the "realStorageUnits 0"
++ */
++void
++statvfs_calculate32(struct HRFS_statfs *f)
++{
++    unsigned long long s = f->f_blocks;
++    unsigned shift = 0;
++
++    while (s > INT32_MAX) {
++        s = s >> 1;
++        shift++;
++    }
++
++    f->f_blocks = s;
++    f->f_frsize <<= shift;
++    f->f_bsize <<= shift;
++    f->f_bavail >>= shift;
++    f->f_bfree >>= shift;
++}
++
+ 
+ u_char         *
+ var_hrstore(struct variable *vp,
+@@ -532,6 +557,7 @@
+ 		snmp_log_perror(HRFS_entry->HRFS_mount);
+ 		goto try_next;
+ 	    }
++	    statvfs_calculate32(&stat_buf);
+ 	} else {
+ 	    mem = (netsnmp_memory_info*)ptr;
+         }
