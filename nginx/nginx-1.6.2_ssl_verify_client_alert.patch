@@ -1,0 +1,107 @@
+diff -ur nginx-1.6.2.org/src/event/ngx_event_openssl.c nginx-1.6.2/src/event/ngx_event_openssl.c
+--- nginx-1.6.2.org/src/event/ngx_event_openssl.c	2014-09-16 21:23:19.000000000 +0900
++++ nginx-1.6.2/src/event/ngx_event_openssl.c	2015-02-12 12:00:26.340617834 +0900
+@@ -93,6 +93,7 @@
+ int  ngx_ssl_session_ticket_keys_index;
+ int  ngx_ssl_certificate_index;
+ int  ngx_ssl_stapling_index;
++ngx_int_t ngx_ssl_verify_client_alert;
+ 
+ 
+ ngx_int_t
+@@ -361,7 +362,7 @@
+ 
+ ngx_int_t
+ ngx_ssl_client_certificate(ngx_conf_t *cf, ngx_ssl_t *ssl, ngx_str_t *cert,
+-    ngx_int_t depth)
++    ngx_int_t depth, ngx_int_t verify_client_alert)
+ {
+     STACK_OF(X509_NAME)  *list;
+ 
+@@ -369,6 +370,8 @@
+ 
+     SSL_CTX_set_verify_depth(ssl->ctx, depth);
+ 
++    ngx_ssl_verify_client_alert = verify_client_alert;
++
+     if (cert->len == 0) {
+         return NGX_OK;
+     }
+@@ -533,6 +536,11 @@
+     }
+ #endif
+ 
++    if (!ok && ngx_ssl_verify_client_alert) {
++        ngx_log_debug0(NGX_LOG_DEBUG_EVENT, c->log, 0, "ceritificate verify failed. send SSL/TLS alert.");
++        return 0;
++    }
++
+     return 1;
+ }
+ 
+diff -ur nginx-1.6.2.org/src/event/ngx_event_openssl.h nginx-1.6.2/src/event/ngx_event_openssl.h
+--- nginx-1.6.2.org/src/event/ngx_event_openssl.h	2014-09-16 21:23:19.000000000 +0900
++++ nginx-1.6.2/src/event/ngx_event_openssl.h	2015-02-12 11:48:36.190598523 +0900
+@@ -114,7 +114,7 @@
+ ngx_int_t ngx_ssl_certificate(ngx_conf_t *cf, ngx_ssl_t *ssl,
+     ngx_str_t *cert, ngx_str_t *key);
+ ngx_int_t ngx_ssl_client_certificate(ngx_conf_t *cf, ngx_ssl_t *ssl,
+-    ngx_str_t *cert, ngx_int_t depth);
++    ngx_str_t *cert, ngx_int_t depth, ngx_int_t verify_client_alert);
+ ngx_int_t ngx_ssl_trusted_certificate(ngx_conf_t *cf, ngx_ssl_t *ssl,
+     ngx_str_t *cert, ngx_int_t depth);
+ ngx_int_t ngx_ssl_crl(ngx_conf_t *cf, ngx_ssl_t *ssl, ngx_str_t *crl);
+diff -ur nginx-1.6.2.org/src/http/modules/ngx_http_ssl_module.c nginx-1.6.2/src/http/modules/ngx_http_ssl_module.c
+--- nginx-1.6.2.org/src/http/modules/ngx_http_ssl_module.c	2014-09-16 21:23:19.000000000 +0900
++++ nginx-1.6.2/src/http/modules/ngx_http_ssl_module.c	2015-02-12 11:47:06.748596323 +0900
+@@ -140,6 +140,13 @@
+       offsetof(ngx_http_ssl_srv_conf_t, verify_depth),
+       NULL },
+ 
++    { ngx_string("ssl_verify_client_alert"),
++      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_CONF_TAKE1,
++      ngx_conf_set_flag_slot,
++      NGX_HTTP_SRV_CONF_OFFSET,
++      offsetof(ngx_http_ssl_srv_conf_t, verify_client_alert),
++      NULL },
++
+     { ngx_string("ssl_client_certificate"),
+       NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_CONF_TAKE1,
+       ngx_conf_set_str_slot,
+@@ -508,6 +515,7 @@
+     sscf->buffer_size = NGX_CONF_UNSET_SIZE;
+     sscf->verify = NGX_CONF_UNSET_UINT;
+     sscf->verify_depth = NGX_CONF_UNSET_UINT;
++    sscf->verify_client_alert = NGX_CONF_UNSET_UINT;
+     sscf->builtin_session_cache = NGX_CONF_UNSET;
+     sscf->session_timeout = NGX_CONF_UNSET;
+     sscf->session_tickets = NGX_CONF_UNSET;
+@@ -553,6 +561,7 @@
+ 
+     ngx_conf_merge_uint_value(conf->verify, prev->verify, 0);
+     ngx_conf_merge_uint_value(conf->verify_depth, prev->verify_depth, 1);
++    ngx_conf_merge_uint_value(conf->verify_client_alert, prev->verify_client_alert, 0);
+ 
+     ngx_conf_merge_str_value(conf->certificate, prev->certificate, "");
+     ngx_conf_merge_str_value(conf->certificate_key, prev->certificate_key, "");
+@@ -674,7 +683,8 @@
+ 
+         if (ngx_ssl_client_certificate(cf, &conf->ssl,
+                                        &conf->client_certificate,
+-                                       conf->verify_depth)
++                                       conf->verify_depth,
++                                       conf->verify_client_alert)
+             != NGX_OK)
+         {
+             return NGX_CONF_ERROR;
+diff -ur nginx-1.6.2.org/src/http/modules/ngx_http_ssl_module.h nginx-1.6.2/src/http/modules/ngx_http_ssl_module.h
+--- nginx-1.6.2.org/src/http/modules/ngx_http_ssl_module.h	2015-02-12 10:56:12.077510759 +0900
++++ nginx-1.6.2/src/http/modules/ngx_http_ssl_module.h	2015-02-12 10:44:26.010491696 +0900
+@@ -25,6 +25,7 @@
+ 
+     ngx_uint_t                      verify;
+     ngx_uint_t                      verify_depth;
++    ngx_uint_t                      verify_client_alert;
+ 
+     size_t                          buffer_size;
+ 
