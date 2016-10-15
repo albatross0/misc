@@ -1,0 +1,29 @@
+--- a/net/ipv4/ip_vti.c.org	2016-06-27 09:03:38.000000000 +0000
++++ b/net/ipv4/ip_vti.c	2016-10-14 15:57:50.902383062 +0000
+@@ -57,9 +57,15 @@ static int vti_input(struct sk_buff *skb
+ 	const struct iphdr *iph = ip_hdr(skb);
+ 	struct net *net = dev_net(skb->dev);
+ 	struct ip_tunnel_net *itn = net_generic(net, vti_net_id);
++	__be16 flags;
+ 
+-	tunnel = ip_tunnel_lookup(itn, skb->dev->ifindex, TUNNEL_NO_KEY,
+-				  iph->saddr, iph->daddr, 0);
++	if (skb->mark > 0)
++		flags = VTI_ISVTI|TUNNEL_KEY;
++	else
++		flags = TUNNEL_NO_KEY;
++
++	tunnel = ip_tunnel_lookup(itn, skb->dev->ifindex, flags,
++				  iph->saddr, iph->daddr, cpu_to_be32(skb->mark));
+ 	if (tunnel != NULL) {
+ 		if (!xfrm4_policy_check(NULL, XFRM_POLICY_IN, skb))
+ 			goto drop;
+@@ -325,6 +331,8 @@ vti_tunnel_ioctl(struct net_device *dev,
+ 		p.o_key = 0;
+ 
+ 	p.i_flags = VTI_ISVTI;
++	if (p.i_key || p.o_key)
++		p.i_flags |= TUNNEL_KEY;
+ 
+ 	err = ip_tunnel_ioctl(dev, &p, cmd);
+ 	if (err)
