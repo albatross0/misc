@@ -32,7 +32,7 @@
 -	tunnel = ip_tunnel_lookup(itn, skb->dev->ifindex, TUNNEL_NO_KEY,
 -				  iph->daddr, iph->saddr, 0);
 +	tunnel = ip_tunnel_lookup(itn, skb->dev->ifindex, flags,
-+				  iph->saddr, iph->daddr, cpu_to_be32(skb->mark));
++				  iph->daddr, iph->saddr, cpu_to_be32(skb->mark));
  	if (!tunnel)
  		return -1;
  
